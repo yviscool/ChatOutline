@@ -5,8 +5,8 @@
 
 ChatOutline 是一个浏览器用户脚本，为主流 AI 聊天平台（如 ChatGPT、Gemini、DeepSeek、百川 AI 和 Kimi）提供便捷的对话大纲导航功能。
 
-![ChatOutline 预览](https://raw.githubusercontent.com/yviscool/ChatOutline/main/screenshots/preview.png)
-
+![ChatOutline 预览](https://raw.githubusercontent.com/yviscool/ChatOutline/main/screenshots/chatgpt.png)
+![ChatOutline 预览](https://raw.githubusercontent.com/yviscool/ChatOutline/main/screenshots/deepseek.png)
 ## ✨ 功能特点
 
 - 🧭 **智能导航**：自动提取对话中的问题，生成可点击的大纲
