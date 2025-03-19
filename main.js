@@ -1,18 +1,18 @@
 // ==UserScript==
 // @name         GPT 大纲生成器
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  为 GPT 对话生成右侧大纲视图，提取问题前16个字作为标题
 // @author       YungVenuz
 // @license      AGPL-3.0-or-later
 // @match        https://chatgpt.com/*
 // @match        https://chat.deepseek.com/*
-// @match        https://gemini.google.com/app*
-// @match        https://kimi.moonshot.cn/chat*
-// @include      https://ying.baichuan-ai.com/chat*
+// @match        https://gemini.google.com/*
+// @match        https://kimi.moonshot.cn/*
+// @include      https://ying.baichuan-ai.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=openai.com
 // @grant        none
-// @require      https://code.jquery.com/jquery-3.6.0.min.js
+// @require      https://cdn.jsdelivr.net/npm/cash-dom/dist/cash.min.js
 // ==/UserScript==
 
 (function () {
@@ -27,217 +27,218 @@
             this.toggleButton = null;
             this.styleElement = null;
             this.cssStyles = `
-        .outline-container {
-            position: fixed;
-            top: 70px;
-            right: 20px;
-            width: 280px;
-            max-height: calc(100vh - 100px);
-            background-color: rgba(247, 247, 248, 0.85);
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            z-index: 1000;
-            overflow-y: auto;
-            overflow-x: hidden; /* 防止水平滚动 */
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            font-family: 'Söhne', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
-            opacity: 0.95;
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
-        }
+                .outline-container {
+                    color: #000000;
+                    position: fixed;
+                    top: 70px;
+                    right: 20px;
+                    width: 280px;
+                    max-height: calc(100vh - 100px);
+                    background-color: rgba(247, 247, 248, 0.85);
+                    border-radius: 12px;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+                    z-index: 1000;
+                    overflow-y: auto;
+                    overflow-x: hidden; /* 防止水平滚动 */
+                    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+                    font-family: 'Söhne', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+                    opacity: 0.95;
+                    backdrop-filter: blur(5px);
+                    -webkit-backdrop-filter: blur(5px);
+                }
 
-        .outline-container:hover {
-            opacity: 1;
-            background-color: rgba(247, 247, 248, 0.98);
-            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-            transform: translateY(-2px);
-        }
+                .outline-container:hover {
+                    opacity: 1;
+                    background-color: rgba(247, 247, 248, 0.98);
+                    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+                    transform: translateY(-2px);
+                }
 
-        .dark .outline-container {
-            background-color: rgba(52, 53, 65, 0.85);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-        }
+                .dark .outline-container {
+                    background-color: rgba(52, 53, 65, 0.85);
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+                }
 
-        .dark .outline-container:hover {
-            background-color: rgba(52, 53, 65, 0.98);
-            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-        }
+                .dark .outline-container:hover {
+                    background-color: rgba(52, 53, 65, 0.98);
+                    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+                }
 
-        .outline-header {
-            padding: 16px;
-            font-weight: 600;
-            font-size: 16px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            background: inherit;
-            border-radius: 12px 12px 0 0;
-            z-index: 2;
-        }
+                .outline-header {
+                    padding: 16px;
+                    font-weight: 600;
+                    font-size: 16px;
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    position: sticky;
+                    top: 0;
+                    background: inherit;
+                    border-radius: 12px 12px 0 0;
+                    z-index: 2;
+                }
 
-        .dark .outline-header {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            color: #ececf1;
-        }
+                .dark .outline-header {
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                    color: #ececf1;
+                }
 
-        .outline-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+                .outline-title {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
 
-        .outline-title-icon {
-            color: #10a37f;
-        }
+                .outline-title-icon {
+                    color: #10a37f;
+                }
 
-        .outline-items {
-            padding: 8px 0;
-        }
+                .outline-items {
+                    padding: 8px 0;
+                }
 
-        .outline-item {
-            padding: 10px 16px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 14px;
-            border-left: 3px solid transparent;
-            display: flex;
-            align-items: center;
-            margin: 2px 0;
-            border-radius: 0 4px 4px 0;
-            box-sizing: border-box; /* 确保padding不会增加元素宽度 */
-            width: 100%; /* 确保宽度不超过父容器 */
-        }
+                .outline-item {
+                    padding: 10px 16px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    font-size: 14px;
+                    border-left: 3px solid transparent;
+                    display: flex;
+                    align-items: center;
+                    margin: 2px 0;
+                    border-radius: 0 4px 4px 0;
+                    box-sizing: border-box; /* 确保padding不会增加元素宽度 */
+                    width: 100%; /* 确保宽度不超过父容器 */
+                }
 
-        .outline-item:hover {
-            background-color: rgba(0, 0, 0, 0.05);
-            transform: translateX(2px);
-        }
+                .outline-item:hover {
+                    background-color: rgba(0, 0, 0, 0.05);
+                    transform: translateX(2px);
+                }
 
-        .dark .outline-item:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
+                .dark .outline-item:hover {
+                    background-color: rgba(255, 255, 255, 0.05);
+                }
 
-        .outline-item.active {
-            border-left-color: #10a37f;
-            background-color: rgba(16, 163, 127, 0.1);
-            font-weight: 500;
-        }
+                .outline-item.active {
+                    border-left-color: #10a37f;
+                    background-color: rgba(16, 163, 127, 0.1);
+                    font-weight: 500;
+                }
 
-        .outline-item-icon {
-            margin-right: 10px;
-            color: #10a37f;
-            transition: transform 0.2s ease;
-        }
+                .outline-item-icon {
+                    margin-right: 10px;
+                    color: #10a37f;
+                    transition: transform 0.2s ease;
+                }
 
-        .outline-item:hover .outline-item-icon {
-            transform: scale(1.1);
-        }
+                .outline-item:hover .outline-item-icon {
+                    transform: scale(1.1);
+                }
 
-        .outline-item-text {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            flex: 1;
-            line-height: 1.4;
-            max-width: calc(100% - 30px); /* 减去图标和边距的宽度 */
-        }
+                .outline-item-text {
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    flex: 1;
+                    line-height: 1.4;
+                    max-width: calc(100% - 30px); /* 减去图标和边距的宽度 */
+                }
 
-        .dark .outline-item-text {
-            color: #ececf1;
-        }
+                .dark .outline-item-text {
+                    color: #ececf1;
+                }
 
-        .outline-toggle {
-            position: fixed;
-            top: 70px;
-            right: 20px;
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            background-color: rgba(16, 163, 127, 0.9);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 1001;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-        }
+                .outline-toggle {
+                    position: fixed;
+                    top: 70px;
+                    right: 20px;
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 50%;
+                    background-color: rgba(16, 163, 127, 0.9);
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    z-index: 1001;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+                    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+                }
 
-        .outline-toggle:hover {
-            transform: scale(1.08);
-            background-color: #10a37f;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
+                .outline-toggle:hover {
+                    transform: scale(1.08);
+                    background-color: #10a37f;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                }
 
-        .outline-toggle svg {
-            width: 20px;
-            height: 20px;
-            transition: transform 0.3s ease;
-        }
+                .outline-toggle svg {
+                    width: 20px;
+                    height: 20px;
+                    transition: transform 0.3s ease;
+                }
 
-        .outline-toggle:hover svg {
-            transform: rotate(90deg);
-        }
+                .outline-toggle:hover svg {
+                    transform: rotate(90deg);
+                }
 
-        .outline-close {
-            cursor: pointer;
-            opacity: 0.7;
-            transition: all 0.2s ease;
-            padding: 4px;
-            border-radius: 4px;
-        }
+                .outline-close {
+                    cursor: pointer;
+                    opacity: 0.7;
+                    transition: all 0.2s ease;
+                    padding: 4px;
+                    border-radius: 4px;
+                }
 
-        .outline-close:hover {
-            opacity: 1;
-            background-color: rgba(0, 0, 0, 0.05);
-        }
+                .outline-close:hover {
+                    opacity: 1;
+                    background-color: rgba(0, 0, 0, 0.05);
+                }
 
-        .dark .outline-close:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
+                .dark .outline-close:hover {
+                    background-color: rgba(255, 255, 255, 0.1);
+                }
 
-        .outline-empty {
-            padding: 20px 16px;
-            text-align: center;
-            color: #888;
-            font-style: italic;
-            font-size: 14px;
-        }
+                .outline-empty {
+                    padding: 20px 16px;
+                    text-align: center;
+                    color: #888;
+                    font-style: italic;
+                    font-size: 14px;
+                }
 
-        .dark .outline-empty {
-            color: #aaa;
-        }
+                .dark .outline-empty {
+                    color: #aaa;
+                }
 
-        @media (max-width: 1400px) {
-            .outline-container {
-                width: 250px;
-            }
-        }
+                @media (max-width: 1400px) {
+                    .outline-container {
+                        width: 250px;
+                    }
+                }
 
-        @media (max-width: 1200px) {
-            .outline-container {
-                width: 220px;
-            }
-        }
+                @media (max-width: 1200px) {
+                    .outline-container {
+                        width: 220px;
+                    }
+                }
 
-        @media (max-width: 768px) {
-            .outline-container {
-                display: none;
-            }
-        }`;
+                @media (max-width: 768px) {
+                    .outline-container {
+                        display: none;
+                    }
+                }`;
         }
 
         /**
-              * 初始化大纲生成器
-              */
+          * 初始化大纲生成器
+          */
         init() {
             // 等待页面加载完成
             if (!document.querySelector('main')) {
-                setTimeout(() => this.init(), 1000);
+                setTimeout(() => this.init(), 50);
                 return;
             }
 
@@ -246,7 +247,7 @@
             this.toggleButton = this.createToggleButton();
 
             // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 500);
+            setTimeout(() => this.generateOutlineItems(), 50);
 
             // 设置初始暗黑模式状态
             this.outlineContainer.classList.toggle('dark', this.detectDarkMode());
@@ -495,10 +496,10 @@
         }
 
         /**
-    * 处理大纲项点击事件
-    * @param {HTMLElement} item 点击的大纲项
-    * @param {HTMLElement} message 对应的消息元素
-    */
+          * 处理大纲项点击事件
+          * @param {HTMLElement} item 点击的大纲项
+          * @param {HTMLElement} message 对应的消息元素
+          */
         handleItemClick(item, message) {
             // 滚动到对应的消息
             message.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -619,7 +620,7 @@
                 });
 
                 if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 500); // 延迟执行，确保DOM已更新
+                    setTimeout(() => this.generateOutlineItems(), 50); // 延迟执行，确保DOM已更新
                 }
             });
 
@@ -630,6 +631,7 @@
             }
         }
     }
+
     /**
      * DeepSeek大纲生成器类
      */
@@ -637,39 +639,6 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
-
-            // 添加 DeepSeek 特定的样式覆盖
-            const deepseekStyles = `
-            .outline-item {
-                color: #333; /* 明确设置浅色模式下的文本颜色 */
-                width: 100%; /* 确保宽度不超过父容器 */
-                box-sizing: border-box; /* 确保padding不会增加元素宽度 */
-            }
-            
-            .outline-item-text {
-                color: #333; /* 明确设置浅色模式下的文本颜色 */
-                max-width: calc(100% - 30px); /* 减去图标和边距的宽度 */
-            }
-            
-            .dark .outline-item {
-                color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-            }
-            
-            .dark .outline-item-text {
-                color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-            }
-            
-            .outline-title {
-                color: #333; /* 明确设置浅色模式下的标题颜色 */
-            }
-            
-            .dark .outline-title {
-                color: #ececf1; /* 明确设置深色模式下的标题颜色 */
-            }
-            `;
-
-            // 将 DeepSeek 特定样式添加到继承的样式中
-            this.cssStyles += deepseekStyles;
         }
 
         /**
@@ -678,7 +647,7 @@
         init() {
             // 等待页面加载完成
             if (!document.querySelector('.dad65929')) {
-                setTimeout(() => this.init(), 1000);
+                setTimeout(() => this.init(), 50);
                 return;
             }
 
@@ -687,13 +656,7 @@
             this.toggleButton = this.createToggleButton();
 
             // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 500);
-
-            // 设置初始暗黑模式状态
-            this.outlineContainer.classList.toggle('dark', this.detectDarkMode());
-
-            // 监听暗黑模式变化
-            this.observeDarkModeChanges();
+            setTimeout(() => this.generateOutlineItems(), 50);
 
             // 监听新消息
             this.observeNewMessages();
@@ -770,33 +733,6 @@
             this.highlightVisibleItem();
         }
 
-        /**
-         * 检测暗黑模式 - DeepSeek版本
-         * @returns {boolean} 是否为暗黑模式
-         */
-        detectDarkMode() {
-            // 更可靠的方法：检查页面上的特定元素或属性
-            // DeepSeek 即使在浅色模式下也可能有深色背景的元素
-
-            // 方法1：检查是否有深色模式的类名或属性
-            const hasDarkClass = document.body.classList.contains('dark') ||
-                document.documentElement.classList.contains('dark');
-
-            if (hasDarkClass) return true;
-
-            // 方法2：检查文本颜色，如果主要文本是浅色，则可能是深色模式
-            const textColor = window.getComputedStyle(document.body).color;
-            const textRgb = textColor.match(/\d+/g);
-
-            if (textRgb && textRgb.length >= 3) {
-                // 如果文本颜色较浅（RGB值较高），则可能是深色模式
-                const avgTextColor = (parseInt(textRgb[0]) + parseInt(textRgb[1]) + parseInt(textRgb[2])) / 3;
-                if (avgTextColor > 200) return true;
-            }
-
-            // 默认为浅色模式
-            return false;
-        }
 
         /**
          * 监听新消息 - DeepSeek版本
@@ -819,7 +755,7 @@
                 });
 
                 if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 500);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
@@ -865,6 +801,7 @@
             }
         }
     }
+
     /**
      * Gemini大纲生成器类
      */
@@ -872,208 +809,34 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
-
-            // 添加 Gemini 特定的样式覆盖
-            const geminiStyles = `
-            .outline-container {
-                top: 80px;
-            }
-            
-            .outline-toggle {
-                top: 80px;
-                background-color: rgba(103, 58, 183, 0.9);
-            }
-            
-            .outline-toggle:hover {
-                background-color: rgb(103, 58, 183);
-            }
-            
-            .outline-item.active {
-                border-left-color: rgb(103, 58, 183);
-                background-color: rgba(103, 58, 183, 0.1);
-            }
-            
-            .outline-item-icon {
-                color: rgb(103, 58, 183);
-            }
-            
-            .outline-title-icon {
-                color: rgb(103, 58, 183);
-            }
-            
-            .outline-item {
-                color: #333;
-                width: 100%;
-                box-sizing: border-box;
-            }
-            
-            .outline-item-text {
-                color: #333;
-                max-width: calc(100% - 30px);
-            }
-            
-            .dark .outline-item {
-                color: #ececf1;
-            }
-            
-            .dark .outline-item-text {
-                color: #ececf1;
-            }
-            
-            .outline-title {
-                color: #333;
-            }
-            
-            .dark .outline-title {
-                color: #ececf1;
-            }
-            `;
-
-            // 将 Gemini 特定样式添加到继承的样式中
-            this.cssStyles += geminiStyles;
         }
-
         /**
-         * 创建大纲容器 - 使用DOM API而不是innerHTML
-         * @returns {HTMLElement} 大纲容器元素
+         * 初始化大纲生成器
          */
-        createOutlineContainer() {
-            const container = document.createElement('div');
-            container.className = 'outline-container';
+        init() {
+            // 等待页面加载完成
+            if (!document.querySelector('chat-window')) {
+                setTimeout(() => this.init(), 50);
+                return;
+            }
 
-            // 创建头部
-            const header = document.createElement('div');
-            header.className = 'outline-header';
+            this.addStyles();
+            this.outlineContainer = this.createOutlineContainer();
+            this.toggleButton = this.createToggleButton();
 
-            // 创建标题
-            const title = document.createElement('div');
-            title.className = 'outline-title';
+            // 初始化大纲
+            setTimeout(() => this.generateOutlineItems(), 50);
 
-            // 创建标题图标
-            const titleIcon = document.createElement('span');
-            titleIcon.className = 'outline-title-icon';
-            const titleSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            titleSvg.setAttribute('width', '16');
-            titleSvg.setAttribute('height', '16');
-            titleSvg.setAttribute('viewBox', '0 0 24 24');
-            titleSvg.setAttribute('fill', 'none');
-            const titlePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            titlePath.setAttribute('d', 'M4 6H20M4 12H20M4 18H14');
-            titlePath.setAttribute('stroke', 'currentColor');
-            titlePath.setAttribute('stroke-width', '2');
-            titlePath.setAttribute('stroke-linecap', 'round');
-            titlePath.setAttribute('stroke-linejoin', 'round');
-            titleSvg.appendChild(titlePath);
-            titleIcon.appendChild(titleSvg);
+            // 监听新消息
+            this.observeNewMessages();
 
-            // 创建标题文本
-            const titleText = document.createElement('span');
-            titleText.textContent = '对话大纲';
-
-            // 组装标题
-            title.appendChild(titleIcon);
-            title.appendChild(titleText);
-
-            // 创建关闭按钮
-            const closeBtn = document.createElement('span');
-            closeBtn.className = 'outline-close';
-            const closeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            closeSvg.setAttribute('width', '16');
-            closeSvg.setAttribute('height', '16');
-            closeSvg.setAttribute('viewBox', '0 0 24 24');
-            closeSvg.setAttribute('fill', 'none');
-            const closePath1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            closePath1.setAttribute('d', 'M18 6L6 18');
-            closePath1.setAttribute('stroke', 'currentColor');
-            closePath1.setAttribute('stroke-width', '2');
-            closePath1.setAttribute('stroke-linecap', 'round');
-            closePath1.setAttribute('stroke-linejoin', 'round');
-            const closePath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            closePath2.setAttribute('d', 'M6 6L18 18');
-            closePath2.setAttribute('stroke', 'currentColor');
-            closePath2.setAttribute('stroke-width', '2');
-            closePath2.setAttribute('stroke-linecap', 'round');
-            closePath2.setAttribute('stroke-linejoin', 'round');
-            closeSvg.appendChild(closePath1);
-            closeSvg.appendChild(closePath2);
-            closeBtn.appendChild(closeSvg);
-
-            // 组装头部
-            header.appendChild(title);
-            header.appendChild(closeBtn);
-
-            // 创建大纲项容器
-            const outlineItems = document.createElement('div');
-            outlineItems.className = 'outline-items';
-
-            // 组装容器
-            container.appendChild(header);
-            container.appendChild(outlineItems);
-
-            document.body.appendChild(container);
-
-            // 添加关闭事件
-            closeBtn.addEventListener('click', () => {
-                container.style.display = 'none';
-                this.toggleButton.style.display = 'flex';
-            });
-
-            return container;
+            // 监听滚动以高亮当前可见的消息
+            this.observeScroll();
         }
 
-        /**
-         * 创建切换按钮 - 使用DOM API而不是innerHTML
-         * @returns {HTMLElement} 切换按钮元素
-         */
-        createToggleButton() {
-            const button = document.createElement('div');
-            button.className = 'outline-toggle';
-
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('width', '24');
-            svg.setAttribute('height', '24');
-            svg.setAttribute('viewBox', '0 0 24 24');
-            svg.setAttribute('fill', 'none');
-
-            const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path1.setAttribute('d', 'M4 6H20');
-            path1.setAttribute('stroke', 'currentColor');
-            path1.setAttribute('stroke-width', '2');
-            path1.setAttribute('stroke-linecap', 'round');
-
-            const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path2.setAttribute('d', 'M4 12H20');
-            path2.setAttribute('stroke', 'currentColor');
-            path2.setAttribute('stroke-width', '2');
-            path2.setAttribute('stroke-linecap', 'round');
-
-            const path3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path3.setAttribute('d', 'M4 18H20');
-            path3.setAttribute('stroke', 'currentColor');
-            path3.setAttribute('stroke-width', '2');
-            path3.setAttribute('stroke-linecap', 'round');
-
-            svg.appendChild(path1);
-            svg.appendChild(path2);
-            svg.appendChild(path3);
-            button.appendChild(svg);
-
-            document.body.appendChild(button);
-
-            // 添加点击事件
-            button.addEventListener('click', () => {
-                this.outlineContainer.style.display = 'block';
-                button.style.display = 'none';
-
-                // 重新生成大纲，确保最新状态
-                this.generateOutlineItems();
-            });
-
-            return button;
-        }
 
         /**
-         * 生成大纲项 - 使用DOM API而不是innerHTML
+         * 生成大纲项 - 使用DOM API
          */
         generateOutlineItems() {
             const outlineItems = this.outlineContainer.querySelector('.outline-items');
@@ -1082,8 +845,8 @@
                 outlineItems.removeChild(outlineItems.firstChild);
             }
 
-            // 获取所有用户消息 - 使用Gemini特定的选择器
-            const userMessages = document.querySelectorAll('div[role="region"][aria-label*="用户"] div[role="presentation"], div[role="region"][aria-label*="User"] div[role="presentation"]');
+            // 获取所有用户消息 - 使用更新后的Gemini特定的选择器
+            const userMessages = document.querySelectorAll('user-query .user-query-bubble-container');
 
             if (userMessages.length === 0) {
                 const emptyDiv = document.createElement('div');
@@ -1094,8 +857,8 @@
             }
 
             userMessages.forEach((message, index) => {
-                // 提取消息文本 - 适应Gemini的DOM结构
-                const messageText = message.textContent || '';
+                // 提取消息文本 - 适应Gemini的新DOM结构
+                const messageText = message.querySelector('.query-text')?.textContent || '';
                 const title = this.extractQuestionTitle(messageText);
 
                 const item = document.createElement('div');
@@ -1139,6 +902,81 @@
             // 检查是否有可见的消息，并高亮对应的大纲项
             this.highlightVisibleItem();
         }
+
+        /**
+         * 监听新消息 - Gemini版本
+         */
+        observeNewMessages() {
+            const observer = new MutationObserver((mutations) => {
+                let shouldUpdate = false;
+
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE &&
+                                (node.querySelector('user-query') ||
+                                    node.tagName && node.tagName.toLowerCase() === 'user-query')) {
+                                shouldUpdate = true;
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                if (shouldUpdate) {
+                    setTimeout(() => this.generateOutlineItems(), 50);
+                }
+            });
+
+            // 监听整个聊天容器
+            const chatContainer = document.querySelector('chat-window-content');
+            if (chatContainer) {
+                observer.observe(chatContainer, { childList: true, subtree: true });
+            }
+
+            // 监听URL变化，因为切换对话可能会改变URL
+            this.observeUrlChanges();
+        }
+
+        /**
+         * 监听URL变化 - 用于检测对话切换
+         */
+        observeUrlChanges() {
+            let lastUrl = location.href;
+
+            // 创建一个新的MutationObserver来监视URL变化
+            const urlObserver = new MutationObserver(() => {
+                if (location.href !== lastUrl) {
+                    lastUrl = location.href;
+                    // URL变化后，等待一段时间再更新大纲，确保新对话已加载
+                    setTimeout(() => this.generateOutlineItems(), 50);
+                }
+            });
+
+            // 监听整个文档的变化
+            urlObserver.observe(document, { subtree: true, childList: true });
+
+            // 使用history API监听导航事件
+            const originalPushState = history.pushState;
+            const originalReplaceState = history.replaceState;
+            const self = this;
+
+            history.pushState = function () {
+                originalPushState.apply(this, arguments);
+                setTimeout(() => self.generateOutlineItems(), 50);
+            };
+
+            history.replaceState = function () {
+                originalReplaceState.apply(this, arguments);
+                setTimeout(() => self.generateOutlineItems(), 50);
+            };
+
+            // 监听popstate事件（浏览器的前进/后退按钮）
+            window.addEventListener('popstate', () => {
+                setTimeout(() => this.generateOutlineItems(), 50);
+            });
+        }
+
     }
 
     /**
@@ -1148,59 +986,6 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
-
-            // 添加百川AI特定的样式覆盖
-            const baichuanStyles = `
-            .outline-container {
-                top: 80px;
-            }
-            
-            .outline-toggle {
-                top: 80px;
-            }
-            
-            .outline-toggle:hover {
-            }
-            
-            .outline-item.active {
-                background-color: rgba(0, 102, 255, 0.1);
-            }
-            
-            .outline-item {
-                color: #333; /* 明确设置浅色模式下的文本颜色 */
-                width: 100%; /* 确保宽度不超过父容器 */
-                box-sizing: border-box; /* 确保padding不会增加元素宽度 */
-            }
-            
-            .outline-item-text {
-                color: #333; /* 明确设置浅色模式下的文本颜色 */
-                max-width: calc(100% - 30px); /* 减去图标和边距的宽度 */
-            }
-            
-            .dark .outline-item {
-                color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-            }
-            
-            .dark .outline-item-text {
-                color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-            }
-            
-            .outline-title {
-                color: #333; /* 明确设置浅色模式下的标题颜色 */
-            }
-            
-            .dark .outline-title {
-                color: #ececf1; /* 明确设置深色模式下的标题颜色 */
-            }
-            
-            .outline-item-icon {
-            }
-            
-            .outline-title-icon {
-            }`;
-
-            // 将百川AI特定样式添加到继承的样式中
-            this.cssStyles += baichuanStyles;
         }
 
         /**
@@ -1209,7 +994,7 @@
         init() {
             // 等待页面加载完成
             if (!document.querySelector('#chat-list')) {
-                setTimeout(() => this.init(), 1000);
+                setTimeout(() => this.init(), 50);
                 return;
             }
 
@@ -1218,13 +1003,7 @@
             this.toggleButton = this.createToggleButton();
 
             // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 500);
-
-            // 设置初始暗黑模式状态
-            // this.outlineContainer.classList.toggle('dark', this.detectDarkMode());
-
-            // 监听暗黑模式变化
-            this.observeDarkModeChanges();
+            setTimeout(() => this.generateOutlineItems(), 50);
 
             // 监听新消息和对话切换
             this.observeNewMessages();
@@ -1305,31 +1084,6 @@
         }
 
         /**
-         * 检测暗黑模式 - 百川AI版本
-         * @returns {boolean} 是否为暗黑模式
-         */
-        detectDarkMode() {
-            // 检查是否有深色模式的类名或属性
-            const hasDarkClass = document.body.classList.contains('dark') ||
-                document.documentElement.classList.contains('dark');
-
-            if (hasDarkClass) return true;
-
-            // 检查背景颜色，如果是深色则可能是暗黑模式
-            const bodyBgColor = window.getComputedStyle(document.body).backgroundColor;
-            const bgRgb = bodyBgColor.match(/\d+/g);
-
-            if (bgRgb && bgRgb.length >= 3) {
-                // 如果背景颜色较深（RGB值较低），则可能是深色模式
-                const avgBgColor = (parseInt(bgRgb[0]) + parseInt(bgRgb[1]) + parseInt(bgRgb[2])) / 3;
-                if (avgBgColor < 100) return true;
-            }
-
-            // 默认为浅色模式
-            return false;
-        }
-
-        /**
          * 监听新消息 - 百川AI版本
          */
         observeNewMessages() {
@@ -1357,7 +1111,7 @@
                 });
 
                 if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 500);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
@@ -1390,7 +1144,7 @@
                 if (location.href !== lastUrl) {
                     lastUrl = location.href;
                     // URL变化后，等待一段时间再更新大纲，确保新对话已加载
-                    setTimeout(() => this.generateOutlineItems(), 500);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
@@ -1404,17 +1158,17 @@
 
             history.pushState = function () {
                 originalPushState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 500);
+                setTimeout(() => self.generateOutlineItems(), 50);
             };
 
             history.replaceState = function () {
                 originalReplaceState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 500);
+                setTimeout(() => self.generateOutlineItems(), 50);
             };
 
             // 监听popstate事件（浏览器的前进/后退按钮）
             window.addEventListener('popstate', () => {
-                setTimeout(() => this.generateOutlineItems(), 500);
+                setTimeout(() => this.generateOutlineItems(), 50);
             });
         }
 
@@ -1428,7 +1182,7 @@
                 const chatItem = event.target.closest('[role="button"]');
                 if (chatItem) {
                     // 延迟更新大纲，确保对话已切换
-                    setTimeout(() => this.generateOutlineItems(), 500);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
         }
@@ -1476,65 +1230,6 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
-
-            // 添加Kimi特定的样式覆盖
-            const kimiStyles = `
-                .outline-container {
-                    top: 80px;
-                }
-                
-                .outline-toggle {
-                    top: 80px;
-                    background-color: rgba(0, 102, 255, 0.9);
-                }
-                
-                .outline-toggle:hover {
-                    background-color: rgb(0, 102, 255);
-                }
-                
-                .outline-item.active {
-                    border-left-color: rgb(0, 102, 255);
-                    background-color: rgba(0, 102, 255, 0.1);
-                }
-                
-                .outline-item-icon {
-                    color: rgb(0, 102, 255);
-                }
-                
-                .outline-title-icon {
-                    color: rgb(0, 102, 255);
-                }
-                
-                .outline-item {
-                    color: #333; /* 明确设置浅色模式下的文本颜色 */
-                    width: 100%; /* 确保宽度不超过父容器 */
-                    box-sizing: border-box; /* 确保padding不会增加元素宽度 */
-                }
-                
-                .outline-item-text {
-                    color: #333; /* 明确设置浅色模式下的文本颜色 */
-                    max-width: calc(100% - 30px); /* 减去图标和边距的宽度 */
-                }
-                
-                .dark .outline-item {
-                    color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-                }
-                
-                .dark .outline-item-text {
-                    color: #ececf1; /* 明确设置深色模式下的文本颜色 */
-                }
-                
-                .outline-title {
-                    color: #333; /* 明确设置浅色模式下的标题颜色 */
-                }
-                
-                .dark .outline-title {
-                    color: #ececf1; /* 明确设置深色模式下的标题颜色 */
-                }
-                `;
-
-            // 将Kimi特定样式添加到继承的样式中
-            this.cssStyles += kimiStyles;
         }
 
         /**
@@ -1543,7 +1238,7 @@
         init() {
             // 等待页面加载完成
             if (!document.querySelector('.chat-content-list')) {
-                setTimeout(() => this.init(), 1000);
+                setTimeout(() => this.init(), 50);
                 return;
             }
 
@@ -1552,13 +1247,7 @@
             this.toggleButton = this.createToggleButton();
 
             // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 1000);
-
-            // 设置初始暗黑模式状态
-            this.outlineContainer.classList.toggle('dark', this.detectDarkMode());
-
-            // 监听暗黑模式变化
-            this.observeDarkModeChanges();
+            setTimeout(() => this.generateOutlineItems(), 50);
 
             // 监听新消息
             this.observeNewMessages();
@@ -1635,30 +1324,6 @@
             this.highlightVisibleItem();
         }
 
-        /**
-         * 检测暗黑模式 - Kimi版本
-         * @returns {boolean} 是否为暗黑模式
-         */
-        detectDarkMode() {
-            // 检查是否有深色模式的类名或属性
-            const hasDarkClass = document.body.classList.contains('dark') ||
-                document.documentElement.classList.contains('dark');
-
-            if (hasDarkClass) return true;
-
-            // 检查背景颜色，如果是深色则可能是暗黑模式
-            const bodyBgColor = window.getComputedStyle(document.body).backgroundColor;
-            const bgRgb = bodyBgColor.match(/\d+/g);
-
-            if (bgRgb && bgRgb.length >= 3) {
-                // 如果背景颜色较深（RGB值较低），则可能是深色模式
-                const avgBgColor = (parseInt(bgRgb[0]) + parseInt(bgRgb[1]) + parseInt(bgRgb[2])) / 3;
-                if (avgBgColor < 100) return true;
-            }
-
-            // 默认为浅色模式
-            return false;
-        }
 
         /**
          * 监听新消息 - Kimi版本
@@ -1681,7 +1346,7 @@
                 });
 
                 if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 500);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
@@ -1706,7 +1371,7 @@
                 if (location.href !== lastUrl) {
                     lastUrl = location.href;
                     // URL变化后，等待一段时间再更新大纲，确保新对话已加载
-                    setTimeout(() => this.generateOutlineItems(), 1000);
+                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
@@ -1720,17 +1385,17 @@
 
             history.pushState = function () {
                 originalPushState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 1000);
+                setTimeout(() => self.generateOutlineItems(), 50);
             };
 
             history.replaceState = function () {
                 originalReplaceState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 1000);
+                setTimeout(() => self.generateOutlineItems(), 50);
             };
 
             // 监听popstate事件（浏览器的前进/后退按钮）
             window.addEventListener('popstate', () => {
-                setTimeout(() => this.generateOutlineItems(), 1000);
+                setTimeout(() => this.generateOutlineItems(), 50);
             });
         }
 
@@ -1793,7 +1458,7 @@
         initAll() {
             this.plugins.forEach(plugin => {
                 if (typeof plugin.init === 'function') {
-                    setTimeout(() => plugin.init(), 1500); // 延迟启动，确保页面已加载
+                    setTimeout(() => plugin.init(), 100); // 延迟启动，确保页面已加载
                 }
             });
         }
@@ -1802,7 +1467,8 @@
     /**
      * 创建并启动插件管理器
      */
-    $(document).ready(() => {
+    $(function () {
+        // 添加延迟，确保所有DOM元素都已经渲染完成
         // 创建插件管理器
         const pluginManager = new PluginManager();
 
@@ -1830,4 +1496,5 @@
         // 初始化所有插件
         pluginManager.initAll();
     });
+
 })();
