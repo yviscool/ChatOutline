@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GPT 大纲生成器
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  为 GPT 对话生成右侧大纲视图，提取问题前16个字作为标题
 // @author       YungVenuz
 // @license      AGPL-3.0-or-later
@@ -12,11 +12,40 @@
 // @include      https://ying.baichuan-ai.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=openai.com
 // @grant        none
-// @require      https://cdn.jsdelivr.net/npm/cash-dom/dist/cash.min.js
+// @downloadURL https://update.greasyfork.org/scripts/529962/GPT%20%E5%A4%A7%E7%BA%B2%E7%94%9F%E6%88%90%E5%99%A8.user.js
+// @updateURL https://update.greasyfork.org/scripts/529962/GPT%20%E5%A4%A7%E7%BA%B2%E7%94%9F%E6%88%90%E5%99%A8.meta.js
 // ==/UserScript==
 
 (function () {
     'use strict';
+
+    function $(param) {
+        // DOM Ready 逻辑
+        if (typeof param === 'function') {
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                param();
+            } else {
+                document.addEventListener('DOMContentLoaded', param);
+            }
+            return;
+        }
+
+        // 选择器逻辑
+        if (typeof param === 'string') {
+            const elements = document.querySelectorAll(param);
+            return {
+                elements,
+                hide() {
+                    this.elements.forEach(el => el.style.display = 'none');
+                    return this;
+                },
+                click(fn) {
+                    this.elements.forEach(el => el.addEventListener('click', fn));
+                    return this;
+                }
+            };
+        }
+    }
 
     /**
      * ChatGPT大纲生成器类
@@ -611,7 +640,7 @@
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
                                 (node.querySelector('[data-message-author-role="user"]') ||
-                                    node.hasAttribute && node.hasAttribute('data-message-author-role'))) {
+                                 node.hasAttribute && node.hasAttribute('data-message-author-role'))) {
                                 shouldUpdate = true;
                                 break;
                             }
@@ -639,11 +668,12 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
+            this.currentUrl = window.location.href;
         }
 
         /**
-         * 初始化大纲生成器
-         */
+     * 初始化大纲生成器
+     */
         init() {
             // 等待页面加载完成
             if (!document.querySelector('.dad65929')) {
@@ -663,11 +693,14 @@
 
             // 监听滚动以高亮当前可见的消息
             this.observeScroll();
+
+            // 监听URL变化
+            this.observeUrlChanges();
         }
 
         /**
-         * 生成大纲项
-         */
+     * 生成大纲项
+     */
         generateOutlineItems() {
             const outlineItems = this.outlineContainer.querySelector('.outline-items');
             // 清空现有内容
@@ -675,8 +708,20 @@
                 outlineItems.removeChild(outlineItems.firstChild);
             }
 
-            // 获取所有用户消息 - 使用DeepSeek特定的选择器
-            const userMessages = document.querySelectorAll('[class*="fa81"]');
+            // 获取所有用户消息 - 使用更新后的选择器
+            const chatContainer = document.querySelector('.dad65929');
+            if (!chatContainer) return;
+
+            // 获取所有直接子div
+            const allDivs = Array.from(chatContainer.children).filter(el => el.tagName === 'DIV');
+            // 筛选出奇数位置的div（索引从0开始，所以是偶数索引）
+            const userMessageContainers = allDivs.filter((_, index) => index % 2 === 0);
+
+            // 从每个容器中提取第一个div作为用户消息
+            const userMessages = userMessageContainers.map(container => {
+                const firstDiv = container.querySelector('div');
+                return firstDiv;
+            }).filter(Boolean); // 过滤掉可能的null值
 
             if (userMessages.length === 0) {
                 const emptyDiv = document.createElement('div');
@@ -687,7 +732,7 @@
             }
 
             userMessages.forEach((message, index) => {
-                // 提取消息文本 - 适应DeepSeek的DOM结构
+                // 提取消息文本
                 const messageText = message.textContent || '';
                 const title = this.extractQuestionTitle(messageText);
 
@@ -733,24 +778,16 @@
             this.highlightVisibleItem();
         }
 
-
         /**
-         * 监听新消息 - DeepSeek版本
-         */
+     * 监听新消息 - 更新后的DeepSeek版本
+     */
         observeNewMessages() {
             const observer = new MutationObserver((mutations) => {
                 let shouldUpdate = false;
 
                 mutations.forEach(mutation => {
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                        for (const node of mutation.addedNodes) {
-                            if (node.nodeType === Node.ELEMENT_NODE &&
-                                (node.classList.contains('fa81') ||
-                                    node.querySelector('[class*="fa81"]'))) {
-                                shouldUpdate = true;
-                                break;
-                            }
-                        }
+                        shouldUpdate = true;
                     }
                 });
 
@@ -760,20 +797,52 @@
             });
 
             // 监听整个聊天容器
-            const chatContainer = document.querySelector('.dad65929')?.parentElement;
+            const chatContainer = document.querySelector('.dad65929');
             if (chatContainer) {
                 observer.observe(chatContainer, { childList: true, subtree: true });
             }
         }
 
         /**
-         * 高亮当前可见的消息对应的大纲项 - DeepSeek版本
-         */
+     * 监听URL变化
+     */
+        observeUrlChanges() {
+            // 使用setInterval定期检查URL是否变化
+            setInterval(() => {
+                const currentUrl = window.location.href;
+                if (this.currentUrl !== currentUrl) {
+                    console.log('URL changed, reinitializing outline generator');
+                    this.currentUrl = currentUrl;
+
+                    // 清空现有大纲
+                    const outlineItems = this.outlineContainer.querySelector('.outline-items');
+                    while (outlineItems && outlineItems.firstChild) {
+                        outlineItems.removeChild(outlineItems.firstChild);
+                    }
+
+                    // 等待新页面加载完成后重新生成大纲
+                    setTimeout(() => this.generateOutlineItems(), 500);
+                }
+            }, 500); // 每秒检查一次
+        }
+
+        /**
+     * 高亮当前可见的消息对应的大纲项 - 更新后的DeepSeek版本
+     */
         highlightVisibleItem() {
-            const userMessages = document.querySelectorAll('[class*="fa81"]');
+            // 获取所有用户消息
+            const chatContainer = document.querySelector('.dad65929');
+            if (!chatContainer) return;
+
+            const allDivs = Array.from(chatContainer.children).filter(el => el.tagName === 'DIV');
+            const userMessageContainers = allDivs.filter((_, index) => index % 2 === 0);
+            const userMessages = userMessageContainers.map(container => {
+                return container.querySelector('div');
+            }).filter(Boolean);
+
             if (!userMessages.length) return;
 
-            // 找到当前视口中最靠近顶部的消息
+            // 找到当前视口中最靠近中心的消息
             let closestMessage = null;
             let closestDistance = Infinity;
             const viewportHeight = window.innerHeight;
@@ -793,11 +862,24 @@
 
             if (closestMessage) {
                 // 找到对应的大纲项并高亮
-                const index = Array.from(userMessages).indexOf(closestMessage);
+                const index = userMessages.indexOf(closestMessage);
                 const outlineItem = this.outlineContainer.querySelector(`.outline-item[data-index="${index}"]`);
                 if (outlineItem) {
                     this.highlightItem(outlineItem);
                 }
+            }
+        }
+
+        /**
+     * 处理大纲项点击事件
+     */
+        handleItemClick(item, message) {
+            // 高亮被点击的项
+            this.highlightItem(item);
+
+            // 滚动到对应的消息
+            if (message) {
+                message.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
     }
@@ -915,7 +997,7 @@
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
                                 (node.querySelector('user-query') ||
-                                    node.tagName && node.tagName.toLowerCase() === 'user-query')) {
+                                 node.tagName && node.tagName.toLowerCase() === 'user-query')) {
                                 shouldUpdate = true;
                                 break;
                             }
@@ -1011,8 +1093,6 @@
             // 监听滚动以高亮当前可见的消息
             this.observeScroll();
 
-            // 添加手动刷新按钮
-            this.addRefreshButton();
         }
 
         /**
@@ -1095,7 +1175,7 @@
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
                                 (node.hasAttribute && node.hasAttribute('data-type') &&
-                                    node.getAttribute('data-type') === 'prompt-item')) {
+                                 node.getAttribute('data-type') === 'prompt-item')) {
                                 shouldUpdate = true;
                                 break;
                             }
@@ -1105,7 +1185,7 @@
                     // 检查属性变化，可能是对话切换导致的变化
                     if (mutation.type === 'attributes' &&
                         (mutation.attributeName === 'data-type' ||
-                            mutation.attributeName === 'class')) {
+                         mutation.attributeName === 'class')) {
                         shouldUpdate = true;
                     }
                 });
@@ -1337,7 +1417,7 @@
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
                                 (node.classList.contains('chat-content-item') ||
-                                    node.querySelector('.segment-user'))) {
+                                 node.querySelector('.segment-user'))) {
                                 shouldUpdate = true;
                                 break;
                             }
