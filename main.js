@@ -1,23 +1,23 @@
 // ==UserScript==
 // @name         GPT 大纲生成器
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.9
 // @description  为 GPT 对话生成右侧大纲视图，提取问题前16个字作为标题
 // @author       YungVenuz
 // @license      AGPL-3.0-or-later
 // @match        https://chatgpt.com/*
 // @match        https://chat.deepseek.com/*
 // @match        https://gemini.google.com/*
-// @match        https://kimi.moonshot.cn/*
+// @match        https://www.kimi.com/*
+// @match        https://yuanbao.tencent.com/*
 // @include      https://ying.baichuan-ai.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=openai.com
 // @grant        none
-// @downloadURL https://update.greasyfork.org/scripts/529962/GPT%20%E5%A4%A7%E7%BA%B2%E7%94%9F%E6%88%90%E5%99%A8.user.js
-// @updateURL https://update.greasyfork.org/scripts/529962/GPT%20%E5%A4%A7%E7%BA%B2%E7%94%9F%E6%88%90%E5%99%A8.meta.js
 // ==/UserScript==
 
 (function () {
     'use strict';
+
 
     function $(param) {
         // DOM Ready 逻辑
@@ -885,20 +885,21 @@
     }
 
     /**
-     * Gemini大纲生成器类
+     * Gemini大纲生成器类 (已修复内容加载延迟的Bug)
      */
     class GeminiOutlineGenerator extends ChatGPTOutlineGenerator {
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
         }
+
         /**
-         * 初始化大纲生成器
-         */
+     * 初始化大纲生成器
+     */
         init() {
-            // 等待页面加载完成
+            // 等待页面主要框架加载完成
             if (!document.querySelector('chat-window')) {
-                setTimeout(() => this.init(), 50);
+                setTimeout(() => this.init(), 100); // 增加初始检测延迟
                 return;
             }
 
@@ -906,29 +907,63 @@
             this.outlineContainer = this.createOutlineContainer();
             this.toggleButton = this.createToggleButton();
 
-            // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 50);
+            // **【修复】** 不再立即生成大纲，而是等待内容加载
+            this.waitForContentAndGenerate();
 
-            // 监听新消息
+            // 监听新消息 (此逻辑依然有效)
             this.observeNewMessages();
 
             // 监听滚动以高亮当前可见的消息
             this.observeScroll();
+
+            // 监听URL变化 (此逻辑依然有效，但其回调函数已被修改)
+            this.observeUrlChanges();
+        }
+
+        /**
+     * 【新增修复方法】轮询等待聊天内容加载完成后再生成大纲
+     * @param {number} timeout - 最大等待时间 (毫秒)
+     */
+        waitForContentAndGenerate(timeout = 7000) {
+            // 先清空旧内容，防止切换对话时看到上一个对话的大纲
+            const outlineItems = this.outlineContainer.querySelector('.outline-items');
+            if (outlineItems) {
+                while (outlineItems.firstChild) {
+                    outlineItems.removeChild(outlineItems.firstChild);
+                }
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'outline-empty';
+                emptyDiv.textContent = '正在加载大纲...'; // 提升用户体验
+                outlineItems.appendChild(emptyDiv);
+            }
+
+            const startTime = Date.now();
+            const interval = setInterval(() => {
+                // 使用更精确的选择器检测内容是否已加载
+                const userMessages = document.querySelectorAll('user-query .query-text');
+
+                // 如果找到内容或者超时，则停止轮询
+                if (userMessages.length > 0 || Date.now() - startTime > timeout) {
+                    clearInterval(interval);
+                    this.generateOutlineItems(); // 无论结果如何，执行生成
+                }
+            }, 200); // 每200毫秒检查一次
         }
 
 
         /**
-         * 生成大纲项 - 使用DOM API
-         */
+     * 生成大纲项 - 使用DOM API
+     * (选择器根据新结构确认有效)
+     */
         generateOutlineItems() {
             const outlineItems = this.outlineContainer.querySelector('.outline-items');
-            // 清空现有内容
+            // 清空现有内容 (包括 "正在加载..." 提示)
             while (outlineItems.firstChild) {
                 outlineItems.removeChild(outlineItems.firstChild);
             }
 
-            // 获取所有用户消息 - 使用更新后的Gemini特定的选择器
-            const userMessages = document.querySelectorAll('user-query .user-query-bubble-container');
+            // 获取所有用户消息 - 使用Gemini特定的选择器
+            const userMessages = document.querySelectorAll('user-query');
 
             if (userMessages.length === 0) {
                 const emptyDiv = document.createElement('div');
@@ -939,9 +974,12 @@
             }
 
             userMessages.forEach((message, index) => {
-                // 提取消息文本 - 适应Gemini的新DOM结构
+                // 提取消息文本 - 适应Gemini的DOM结构
                 const messageText = message.querySelector('.query-text')?.textContent || '';
                 const title = this.extractQuestionTitle(messageText);
+
+                // 如果标题为空则跳过 (可能是一些空的交互元素)
+                if (!title || title === "空白问题") return;
 
                 const item = document.createElement('div');
                 item.className = 'outline-item';
@@ -951,18 +989,15 @@
                 // 创建图标
                 const iconSpan = document.createElement('span');
                 iconSpan.className = 'outline-item-icon';
-
                 const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 iconSvg.setAttribute('width', '16');
                 iconSvg.setAttribute('height', '16');
                 iconSvg.setAttribute('viewBox', '0 0 24 24');
                 iconSvg.setAttribute('fill', 'none');
-
                 const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 iconPath.setAttribute('d', 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z');
                 iconPath.setAttribute('stroke', 'currentColor');
                 iconPath.setAttribute('fill', 'currentColor');
-
                 iconSvg.appendChild(iconPath);
                 iconSpan.appendChild(iconSvg);
 
@@ -986,18 +1021,17 @@
         }
 
         /**
-         * 监听新消息 - Gemini版本
-         */
+     * 监听新消息 - Gemini版本
+     * (此部分逻辑保持不变，用于处理聊天中的新消息)
+     */
         observeNewMessages() {
             const observer = new MutationObserver((mutations) => {
                 let shouldUpdate = false;
-
                 mutations.forEach(mutation => {
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
-                                (node.querySelector('user-query') ||
-                                 node.tagName && node.tagName.toLowerCase() === 'user-query')) {
+                                (node.tagName && node.tagName.toLowerCase() === 'user-query')) {
                                 shouldUpdate = true;
                                 break;
                             }
@@ -1006,108 +1040,161 @@
                 });
 
                 if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 50);
+                    // 使用短延迟，因为这是在已有对话中添加新内容，通常很快
+                    setTimeout(() => this.generateOutlineItems(), 100);
                 }
             });
 
-            // 监听整个聊天容器
-            const chatContainer = document.querySelector('chat-window-content');
-            if (chatContainer) {
-                observer.observe(chatContainer, { childList: true, subtree: true });
+            // 监听聊天记录容器
+            // 根据新结构，chat-history 是一个更精确的监听目标
+            const observeTarget = document.querySelector('div.chat-history');
+            if (observeTarget) {
+                observer.observe(observeTarget, { childList: true, subtree: true });
+            } else {
+                // 备用方案
+                const chatContainer = document.querySelector('chat-window-content');
+                if(chatContainer){
+                    observer.observe(chatContainer, { childList: true, subtree: true });
+                }
             }
-
-            // 监听URL变化，因为切换对话可能会改变URL
-            this.observeUrlChanges();
         }
 
         /**
-         * 监听URL变化 - 用于检测对话切换
-         */
+     * 监听URL变化 - 用于检测对话切换
+     * 【修复】将回调函数改为调用新的等待方法
+     */
         observeUrlChanges() {
             let lastUrl = location.href;
-
-            // 创建一个新的MutationObserver来监视URL变化
-            const urlObserver = new MutationObserver(() => {
-                if (location.href !== lastUrl) {
-                    lastUrl = location.href;
-                    // URL变化后，等待一段时间再更新大纲，确保新对话已加载
-                    setTimeout(() => this.generateOutlineItems(), 50);
-                }
-            });
-
-            // 监听整个文档的变化
-            urlObserver.observe(document, { subtree: true, childList: true });
-
-            // 使用history API监听导航事件
-            const originalPushState = history.pushState;
-            const originalReplaceState = history.replaceState;
             const self = this;
 
+            // 核心逻辑：当检测到URL变化时，调用 waitForContentAndGenerate
+            const onUrlChange = () => {
+                if (location.href !== lastUrl) {
+                    lastUrl = location.href;
+                    console.log('GPT Outline Generator: URL changed, waiting for content...');
+                    self.waitForContentAndGenerate();
+                }
+            };
+
+            // 使用 MutationObserver 是一种可靠的兜底方案
+            const urlObserver = new MutationObserver(onUrlChange);
+            urlObserver.observe(document.body, { subtree: true, childList: true });
+
+            // 并通过 history API 更精确地捕获
+            const originalPushState = history.pushState;
             history.pushState = function () {
                 originalPushState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
+                onUrlChange();
             };
 
+            const originalReplaceState = history.replaceState;
             history.replaceState = function () {
                 originalReplaceState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
+                onUrlChange();
             };
 
-            // 监听popstate事件（浏览器的前进/后退按钮）
-            window.addEventListener('popstate', () => {
-                setTimeout(() => this.generateOutlineItems(), 50);
-            });
+            window.addEventListener('popstate', onUrlChange);
         }
-
     }
-
+    
     /**
-     * 百川AI大纲生成器类
+     * 百川AI大纲生成器类 (已根据新版结构和SPA导航更新)
      */
     class BaichuanOutlineGenerator extends ChatGPTOutlineGenerator {
         constructor() {
             super();
-            // 继承ChatGPT大纲生成器的所有属性和方法
+            this.observer = null; // To hold the MutationObserver instance
         }
 
         /**
-         * 初始化大纲生成器
+         * 处理路由变化，重新生成大纲和观察者
+         */
+        handleRouteChange() {
+            // 延迟执行，以确保新页面的DOM内容已加载
+            setTimeout(() => {
+                this.generateOutlineItems();
+                this.resetMessageObserver();
+            }, 500);
+        }
+
+        /**
+         * 监听SPA路由变化 (History API)
+         */
+        observeSPARoutes() {
+            const self = this;
+            let lastUrl = location.href;
+
+            // 包装 history.pushState 和 history.replaceState
+            const wrapHistoryMethod = (method) => {
+                const original = history[method];
+                history[method] = function(state) {
+                    const result = original.apply(this, arguments);
+                    const event = new Event(method.toLowerCase());
+                    event.state = state;
+                    window.dispatchEvent(event);
+                    return result;
+                };
+            };
+
+            wrapHistoryMethod('pushState');
+            wrapHistoryMethod('replaceState');
+
+            // 监听自定义的 pushstate, replacestate 和原生的 popstate 事件
+            ['popstate', 'pushstate', 'replacestate'].forEach(eventName => {
+                window.addEventListener(eventName, () => {
+                    if (location.href !== lastUrl) {
+                        lastUrl = location.href;
+                        console.log(`URL changed to ${lastUrl}, refreshing outline.`);
+                        self.handleRouteChange();
+                    }
+                });
+            });
+        }
+
+        /**
+         * 初始化大纲生成器 (已更新)
          */
         init() {
-            // 等待页面加载完成
-            if (!document.querySelector('#chat-list')) {
-                setTimeout(() => this.init(), 50);
+            // 等待页面加载完成 - 改为检测是否存在第一条消息
+            if (!document.querySelector('[data-type="prompt-item"]')) {
+                setTimeout(() => this.init(), 100);
                 return;
             }
 
-            this.addStyles();
-            this.outlineContainer = this.createOutlineContainer();
-            this.toggleButton = this.createToggleButton();
+            // 检查UI元素是否已存在，防止重复创建
+            if (!this.styleElement) this.addStyles();
+            if (!this.outlineContainer || !document.body.contains(this.outlineContainer)) {
+                this.outlineContainer = this.createOutlineContainer();
+            }
+            if (!this.toggleButton || !document.body.contains(this.toggleButton)) {
+                this.toggleButton = this.createToggleButton();
+            }
+
+            // 确保大纲是可见的
+            this.outlineContainer.style.display = 'block';
+            this.toggleButton.style.display = 'none';
 
             // 初始化大纲
-            setTimeout(() => this.generateOutlineItems(), 50);
-
-            // 监听新消息和对话切换
-            this.observeNewMessages();
-
-            // 监听滚动以高亮当前可见的消息
+            this.generateOutlineItems();
+            // 设置消息监听
+            this.resetMessageObserver();
+            // 监听滚动
             this.observeScroll();
-
+            // 监听SPA导航
+            this.observeSPARoutes();
         }
 
         /**
-         * 生成大纲项 - 使用DOM API
+         * 生成大纲项 (选择器依然有效)
          */
         generateOutlineItems() {
+            // This method from the previous turn is correct and doesn't need changes.
+            // It correctly uses '[data-type="prompt-item"]' and '.prompt-text-item'
             const outlineItems = this.outlineContainer.querySelector('.outline-items');
-            // 清空现有内容
             while (outlineItems.firstChild) {
                 outlineItems.removeChild(outlineItems.firstChild);
             }
-
-            // 获取所有用户消息 - 使用百川AI特定的选择器
-            const userMessages = document.querySelectorAll('#chat-list [data-type="prompt-item"]');
-
+            const userMessages = document.querySelectorAll('[data-type="prompt-item"]');
             if (userMessages.length === 0) {
                 const emptyDiv = document.createElement('div');
                 emptyDiv.className = 'outline-empty';
@@ -1115,166 +1202,70 @@
                 outlineItems.appendChild(emptyDiv);
                 return;
             }
-
             userMessages.forEach((message, index) => {
-                // 提取消息文本 - 适应百川AI的DOM结构
                 const messageText = message.querySelector('.prompt-text-item')?.textContent || '';
                 const title = this.extractQuestionTitle(messageText);
-
                 const item = document.createElement('div');
                 item.className = 'outline-item';
                 item.dataset.index = index;
-                item.dataset.messageId = `baichuan-message-${index}`;
-
-                // 创建图标
+                item.addEventListener('click', () => this.handleItemClick(item, message));
                 const iconSpan = document.createElement('span');
                 iconSpan.className = 'outline-item-icon';
-
-                const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                iconSvg.setAttribute('width', '16');
-                iconSvg.setAttribute('height', '16');
-                iconSvg.setAttribute('viewBox', '0 0 24 24');
-                iconSvg.setAttribute('fill', 'none');
-
-                const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                iconPath.setAttribute('d', 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z');
-                iconPath.setAttribute('stroke', 'currentColor');
-                iconPath.setAttribute('fill', 'currentColor');
-
-                iconSvg.appendChild(iconPath);
-                iconSpan.appendChild(iconSvg);
-
-                // 创建文本
+                iconSpan.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" fill="currentColor"></path></svg>`;
                 const textSpan = document.createElement('span');
                 textSpan.className = 'outline-item-text';
                 textSpan.textContent = `${index + 1}. ${title}`;
-
-                // 组装项目
                 item.appendChild(iconSpan);
                 item.appendChild(textSpan);
-
-                // 添加点击事件
-                item.addEventListener('click', () => this.handleItemClick(item, message));
-
                 outlineItems.appendChild(item);
             });
-
-            // 检查是否有可见的消息，并高亮对应的大纲项
             this.highlightVisibleItem();
         }
 
         /**
-         * 监听新消息 - 百川AI版本
+         * 重置 MutationObserver 以监听新加载的聊天内容
          */
-        observeNewMessages() {
-            const observer = new MutationObserver((mutations) => {
-                let shouldUpdate = false;
+        resetMessageObserver() {
+            // 如果存在旧的观察者，先断开连接
+            if (this.observer) {
+                this.observer.disconnect();
+            }
 
-                mutations.forEach(mutation => {
+            // 创建新的观察者实例
+            this.observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
-                            if (node.nodeType === Node.ELEMENT_NODE &&
-                                (node.hasAttribute && node.hasAttribute('data-type') &&
-                                 node.getAttribute('data-type') === 'prompt-item')) {
-                                shouldUpdate = true;
-                                break;
+                            if (node.nodeType === Node.ELEMENT_NODE && (node.matches && node.matches('[data-type="prompt-item"]') || node.querySelector('[data-type="prompt-item"]'))) {
+                                // 发现新消息，延迟更新大纲
+                                setTimeout(() => this.generateOutlineItems(), 100);
+                                return;
                             }
                         }
                     }
-
-                    // 检查属性变化，可能是对话切换导致的变化
-                    if (mutation.type === 'attributes' &&
-                        (mutation.attributeName === 'data-type' ||
-                         mutation.attributeName === 'class')) {
-                        shouldUpdate = true;
-                    }
-                });
-
-                if (shouldUpdate) {
-                    setTimeout(() => this.generateOutlineItems(), 50);
                 }
             });
 
-            // 监听整个聊天容器
-            const chatContainer = document.querySelector('#chat-list');
-            if (chatContainer) {
-                observer.observe(chatContainer, {
+            // 动态查找聊天容器并进行监听，这比硬编码一个ID或class更稳定
+            const firstMessage = document.querySelector('[data-type="prompt-item"]');
+            if (firstMessage && firstMessage.parentElement) {
+                const chatContainer = firstMessage.parentElement;
+                this.observer.observe(chatContainer, {
                     childList: true,
                     subtree: true,
-                    attributes: true,  // 添加属性监听
-                    attributeFilter: ['data-type', 'class'] // 监听特定属性变化
                 });
+            } else {
+                console.warn("Outline script could not find chat container to observe.");
             }
-
-            // 监听URL变化，因为切换对话可能会改变URL
-            this.observeUrlChanges();
-
-            // 监听点击事件，可能是通过点击切换对话
-            this.observeClickEvents();
-        }
-
-        /**
-         * 监听URL变化 - 用于检测对话切换
-         */
-        observeUrlChanges() {
-            let lastUrl = location.href;
-
-            // 创建一个新的MutationObserver来监视URL变化
-            const urlObserver = new MutationObserver(() => {
-                if (location.href !== lastUrl) {
-                    lastUrl = location.href;
-                    // URL变化后，等待一段时间再更新大纲，确保新对话已加载
-                    setTimeout(() => this.generateOutlineItems(), 50);
-                }
-            });
-
-            // 监听整个文档的变化
-            urlObserver.observe(document, { subtree: true, childList: true });
-
-            // 使用history API监听导航事件
-            const originalPushState = history.pushState;
-            const originalReplaceState = history.replaceState;
-            const self = this;
-
-            history.pushState = function () {
-                originalPushState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
-            };
-
-            history.replaceState = function () {
-                originalReplaceState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
-            };
-
-            // 监听popstate事件（浏览器的前进/后退按钮）
-            window.addEventListener('popstate', () => {
-                setTimeout(() => this.generateOutlineItems(), 50);
-            });
-        }
-
-        /**
-         * 监听点击事件 - 用于检测对话切换
-         */
-        observeClickEvents() {
-            // 监听可能导致对话切换的点击事件
-            document.addEventListener('click', (event) => {
-                // 检查是否点击了对话列表项
-                const chatItem = event.target.closest('[role="button"]');
-                if (chatItem) {
-                    // 延迟更新大纲，确保对话已切换
-                    setTimeout(() => this.generateOutlineItems(), 50);
-                }
-            });
         }
 
         /**
          * 高亮当前可见的消息对应的大纲项 - 百川AI版本
          */
         highlightVisibleItem() {
-            const userMessages = document.querySelectorAll('#chat-list [data-type="prompt-item"]');
+            const userMessages = document.querySelectorAll('[data-type="prompt-item"]');
             if (!userMessages.length) return;
 
-            // 找到当前视口中最靠近顶部的消息
             let closestMessage = null;
             let closestDistance = Infinity;
             const viewportHeight = window.innerHeight;
@@ -1282,10 +1273,7 @@
 
             userMessages.forEach(message => {
                 const rect = message.getBoundingClientRect();
-                // 计算消息中心点到视口中心的距离
                 const distance = Math.abs((rect.top + rect.bottom) / 2 - viewportMiddle);
-
-                // 如果消息在视口内且距离更近
                 if (rect.top < viewportHeight && rect.bottom > 0 && distance < closestDistance) {
                     closestDistance = distance;
                     closestMessage = message;
@@ -1293,7 +1281,6 @@
             });
 
             if (closestMessage) {
-                // 找到对应的大纲项并高亮
                 const index = Array.from(userMessages).indexOf(closestMessage);
                 const outlineItem = this.outlineContainer.querySelector(`.outline-item[data-index="${index}"]`);
                 if (outlineItem) {
@@ -1310,13 +1297,14 @@
         constructor() {
             super();
             // 继承ChatGPT大纲生成器的所有属性和方法
+            this.currentUrl = window.location.href;
         }
 
         /**
          * 初始化大纲生成器
          */
         init() {
-            // 等待页面加载完成
+            // 等待页面加载完成 - .chat-content-list 依然是有效的容器
             if (!document.querySelector('.chat-content-list')) {
                 setTimeout(() => this.init(), 50);
                 return;
@@ -1334,10 +1322,13 @@
 
             // 监听滚动以高亮当前可见的消息
             this.observeScroll();
+
+            // 监听URL变化
+            this.observeUrlChanges();
         }
 
         /**
-         * 生成大纲项
+         * 生成大纲项 (已更新选择器)
          */
         generateOutlineItems() {
             const outlineItems = this.outlineContainer.querySelector('.outline-items');
@@ -1346,8 +1337,8 @@
                 outlineItems.removeChild(outlineItems.firstChild);
             }
 
-            // 获取所有用户消息 - 使用Kimi特定的选择器
-            const userMessages = document.querySelectorAll('.segment-user');
+            // 获取所有用户消息 - 使用Kimi新的、更可靠的选择器
+            const userMessages = document.querySelectorAll('.chat-content-item-user');
 
             if (userMessages.length === 0) {
                 const emptyDiv = document.createElement('div');
@@ -1358,7 +1349,7 @@
             }
 
             userMessages.forEach((message, index) => {
-                // 提取消息文本 - 适应Kimi的DOM结构
+                // 提取消息文本 - .user-content 依然有效
                 const messageText = message.querySelector('.user-content')?.textContent || '';
                 const title = this.extractQuestionTitle(messageText);
 
@@ -1406,7 +1397,7 @@
 
 
         /**
-         * 监听新消息 - Kimi版本
+         * 监听新消息 - Kimi版本 (已更新)
          */
         observeNewMessages() {
             const observer = new MutationObserver((mutations) => {
@@ -1416,8 +1407,9 @@
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE &&
-                                (node.classList.contains('chat-content-item') ||
-                                 node.querySelector('.segment-user'))) {
+                                // 监听更可靠的父节点类名
+                                (node.classList.contains('chat-content-item-user') ||
+                                 node.querySelector('.chat-content-item-user'))) {
                                 shouldUpdate = true;
                                 break;
                             }
@@ -1441,49 +1433,38 @@
         }
 
         /**
-         * 监听URL变化 - 用于检测对话切换
-         */
+        * 监听URL变化
+        */
         observeUrlChanges() {
-            let lastUrl = location.href;
+            // 使用setInterval定期检查URL是否变化
+            setInterval(() => {
+                const currentUrl = window.location.href;
+                if (this.currentUrl !== currentUrl) {
+                    console.log('URL changed, reinitializing outline generator');
+                    this.currentUrl = currentUrl;
 
-            // 创建一个新的MutationObserver来监视URL变化
-            const urlObserver = new MutationObserver(() => {
-                if (location.href !== lastUrl) {
-                    lastUrl = location.href;
-                    // URL变化后，等待一段时间再更新大纲，确保新对话已加载
-                    setTimeout(() => this.generateOutlineItems(), 50);
+                    // 清空现有大纲
+                    const outlineItems = this.outlineContainer.querySelector('.outline-items');
+                    if (outlineItems) {
+                        while (outlineItems.firstChild) {
+                            outlineItems.removeChild(outlineItems.firstChild);
+                        }
+                    }
+
+                    // 等待新页面加载完成后重新生成大纲
+                    setTimeout(() => {
+                        this.init(); // Re-run init to find new chat container
+                    }, 500);
                 }
-            });
-
-            // 监听整个文档的变化
-            urlObserver.observe(document, { subtree: true, childList: true });
-
-            // 使用history API监听导航事件
-            const originalPushState = history.pushState;
-            const originalReplaceState = history.replaceState;
-            const self = this;
-
-            history.pushState = function () {
-                originalPushState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
-            };
-
-            history.replaceState = function () {
-                originalReplaceState.apply(this, arguments);
-                setTimeout(() => self.generateOutlineItems(), 50);
-            };
-
-            // 监听popstate事件（浏览器的前进/后退按钮）
-            window.addEventListener('popstate', () => {
-                setTimeout(() => this.generateOutlineItems(), 50);
-            });
+            }, 500); // 每秒检查一次
         }
 
+
         /**
-         * 高亮当前可见的消息对应的大纲项 - Kimi版本
+         * 高亮当前可见的消息对应的大纲项 - Kimi版本 (已更新)
          */
         highlightVisibleItem() {
-            const userMessages = document.querySelectorAll('.segment-user');
+            const userMessages = document.querySelectorAll('.chat-content-item-user');
             if (!userMessages.length) return;
 
             // 找到当前视口中最靠近顶部的消息
@@ -1506,6 +1487,192 @@
 
             if (closestMessage) {
                 // 找到对应的大纲项并高亮
+                const index = Array.from(userMessages).indexOf(closestMessage);
+                const outlineItem = this.outlineContainer.querySelector(`.outline-item[data-index="${index}"]`);
+                if (outlineItem) {
+                    this.highlightItem(outlineItem);
+                }
+            }
+        }
+    }
+
+    /**
+     * 腾讯元宝大纲生成器类 (新增)
+    */
+    class YuanbaoOutlineGenerator extends ChatGPTOutlineGenerator {
+        constructor() {
+            super();
+            this.currentUrl = window.location.href;
+        }
+
+        /**
+         * 初始化大纲生成器
+         */
+        init() {
+            // 等待页面加载完成
+            if (!document.querySelector('.agent-chat__list')) {
+                setTimeout(() => this.init(), 100);
+                return;
+            }
+
+            this.addStyles();
+            this.outlineContainer = this.createOutlineContainer();
+            this.toggleButton = this.createToggleButton();
+
+            // 初始化大纲
+            setTimeout(() => this.generateOutlineItems(), 100);
+
+            // 监听新消息
+            this.observeNewMessages();
+
+            // 监听滚动以高亮当前可见的消息
+            this.observeScroll();
+
+            // 监听URL变化，以防万一
+            this.observeUrlChanges();
+        }
+
+        /**
+         * 生成大纲项
+         */
+        generateOutlineItems() {
+            const outlineItems = this.outlineContainer.querySelector('.outline-items');
+            // 清空现有内容
+            while (outlineItems.firstChild) {
+                outlineItems.removeChild(outlineItems.firstChild);
+            }
+
+            // 获取所有用户消息 - 使用元宝特定的选择器
+            const userMessages = document.querySelectorAll('.agent-chat__list__item--human');
+
+            if (userMessages.length === 0) {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'outline-empty';
+                emptyDiv.textContent = '暂无对话内容';
+                outlineItems.appendChild(emptyDiv);
+                return;
+            }
+
+            userMessages.forEach((message, index) => {
+                // 提取消息文本
+                const messageText = message.querySelector('.hyc-content-text')?.textContent || '';
+                const title = this.extractQuestionTitle(messageText);
+
+                const item = document.createElement('div');
+                item.className = 'outline-item';
+                item.dataset.index = index;
+                item.dataset.messageId = `yuanbao-message-${index}`;
+
+                // 创建图标
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'outline-item-icon';
+
+                const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                iconSvg.setAttribute('width', '16');
+                iconSvg.setAttribute('height', '16');
+                iconSvg.setAttribute('viewBox', '0 0 24 24');
+                iconSvg.setAttribute('fill', 'none');
+
+                const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                iconPath.setAttribute('d', 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z');
+                iconPath.setAttribute('stroke', 'currentColor');
+                iconPath.setAttribute('fill', 'currentColor');
+
+                iconSvg.appendChild(iconPath);
+                iconSpan.appendChild(iconSvg);
+
+                // 创建文本
+                const textSpan = document.createElement('span');
+                textSpan.className = 'outline-item-text';
+                textSpan.textContent = `${index + 1}. ${title}`;
+
+                // 组装项目
+                item.appendChild(iconSpan);
+                item.appendChild(textSpan);
+
+                // 添加点击事件
+                item.addEventListener('click', () => this.handleItemClick(item, message));
+
+                outlineItems.appendChild(item);
+            });
+
+            // 检查是否有可见的消息，并高亮对应的大纲项
+            this.highlightVisibleItem();
+        }
+
+        /**
+         * 监听新消息 - 元宝版本
+         */
+        observeNewMessages() {
+            const observer = new MutationObserver((mutations) => {
+                let shouldUpdate = false;
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE &&
+                                (node.classList?.contains('agent-chat__list__item--human') || node.querySelector('.agent-chat__list__item--human'))) {
+                                shouldUpdate = true;
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                if (shouldUpdate) {
+                    setTimeout(() => this.generateOutlineItems(), 100);
+                }
+            });
+
+            // 监听整个聊天容器
+            const chatContainer = document.querySelector('.agent-chat__list__content');
+            if (chatContainer) {
+                observer.observe(chatContainer, { childList: true, subtree: true });
+            }
+        }
+
+        /**
+        * 监听URL变化
+        */
+        observeUrlChanges() {
+            setInterval(() => {
+                const currentUrl = window.location.href;
+                if (this.currentUrl !== currentUrl) {
+                    console.log('URL changed, reinitializing outline generator for Yuanbao');
+                    this.currentUrl = currentUrl;
+                    const outlineItems = this.outlineContainer.querySelector('.outline-items');
+                    if (outlineItems) {
+                        while (outlineItems.firstChild) {
+                            outlineItems.removeChild(outlineItems.firstChild);
+                        }
+                    }
+                    setTimeout(() => this.generateOutlineItems(), 500);
+                }
+            }, 500);
+        }
+
+        /**
+         * 高亮当前可见的消息对应的大纲项 - 元宝版本
+         */
+        highlightVisibleItem() {
+            const userMessages = document.querySelectorAll('.agent-chat__list__item--human');
+            if (!userMessages.length) return;
+
+            let closestMessage = null;
+            let closestDistance = Infinity;
+            const viewportHeight = window.innerHeight;
+            const viewportMiddle = viewportHeight / 2;
+
+            userMessages.forEach(message => {
+                const rect = message.getBoundingClientRect();
+                const distance = Math.abs((rect.top + rect.bottom) / 2 - viewportMiddle);
+
+                if (rect.top < viewportHeight && rect.bottom > 0 && distance < closestDistance) {
+                    closestDistance = distance;
+                    closestMessage = message;
+                }
+            });
+
+            if (closestMessage) {
                 const index = Array.from(userMessages).indexOf(closestMessage);
                 const outlineItem = this.outlineContainer.querySelector(`.outline-item[data-index="${index}"]`);
                 if (outlineItem) {
@@ -1558,7 +1725,8 @@
             'chat.deepseek.com': DeepSeekOutlineGenerator,
             'gemini.google.com': GeminiOutlineGenerator,
             'ying.baichuan-ai.com': BaichuanOutlineGenerator,
-            'kimi.moonshot.cn': KimiOutlineGenerator
+            'kimi.com': KimiOutlineGenerator,
+            'yuanbao.tencent.com': YuanbaoOutlineGenerator // 新增元宝
         };
 
         // 获取当前网站域名
